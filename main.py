@@ -3,6 +3,8 @@ import base64
 import logging
 from slackclient import SlackClient
 from time import time
+import os
+
 
 def cloud_build_notification(data, context):
     """Background Cloud Function to be triggered by Pub/Sub.
@@ -13,41 +15,49 @@ def cloud_build_notification(data, context):
     """
 
     _build = dict()
-    
+
     if 'data' in data:
         _build = json.loads(base64.b64decode(data['data']).decode('utf-8'))
 
-    if _build:
-        if _build['status'] == 'FAILURE':
-            send_to_slack(_build['statusDetail'])
-        if _build['status'] == 'WORKING':
-            send_to_slack('Working ...')
-        if _build['status'] == 'SUCCESS':
-            send_to_slack('Success ...')
-    
-    print(_build)
+    if _build.get('status') == 'FAILURE':
+        send_to_slack(create_slack_message_for_failure(_build), 'Failure')
 
-def send_to_slack(text='Cloud Build!'):
-    slack_token = '<slack_token>'
+
+def create_slack_message_for_failure(data):
+    step_failed = ''
+    for step in data.get('steps', []):
+        if step.get('status') == 'FAILURE':
+            step_failed = step.get('id')
+            break
+    return 'Build id: {} \n Repository: {} \n Step failed: {}'.format(
+            data['id'],
+            data['source']['repoSource']['repoName'].split('_')[-1],
+            step_failed
+        )
+
+
+def send_to_slack(text='Cloud Build!', title='Success'):
+    slack_token = os.environ.get("SLACK_TOKEN", "")
+    slack_channel = os.environ.get("SLACK_CHANNEL", "_test")
     sc = SlackClient(slack_token)
 
     sc.api_call(
         "chat.postMessage",
-        channel="_test",
+        channel=slack_channel,
         icon_url='https://cloud.google.com/_static/images/cloud/icons/favicons/onecloud/apple-icon.png',
-        username='Google Cloud Plattaform',
+        username='Google Cloud Platform',
         attachments=[{
             'fallback': 'Google Cloud Build Notification Message',
-            'color': '#36a64f',
+            'color': '#a63636',
             'title': 'Cloud Build Notification',
             'title_link': 'https://api.slack.com/',
             'fields': [{
-                'title': 'Success',
+                'title': title,
                 'value': text,
                 'short': False
             }],
             'thumb_url': 'https://storage.googleapis.com/public_objects/cloud_build_icon.png',
-            'footer': 'gweb-gfw-oort-dev',
+            'footer': 'google.com:oort-form-dev',
             'ts': time()
             }
         ]
